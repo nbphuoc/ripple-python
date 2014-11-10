@@ -42,8 +42,9 @@ def signature_for_transaction(transaction, secret):
     can insert into as ``TxSignature`` into the transaction structure
     you submit.
     """
-    seed = parse_seed(secret)
-    key = root_key_from_seed(seed)
+    #Sign with secret key instead of seed
+    secret = int(secret, 16)
+    key = root_key_from_seed(secret)
 
     # Apparently the pub key is required to be there.
     transaction['SigningPubKey'] = fmt_hex(ecc_point_to_bytes_compressed(
@@ -69,43 +70,14 @@ def parse_seed(secret):
     return RippleBaseDecoder.decode(secret)
 
 
-def root_key_from_seed(seed):
+def root_key_from_seed(secret):
     """This derives your master key the given seed.
 
     Implemented in ripple-lib as ``Seed.prototype.get_key``, and further
     is described here:
     https://ripple.com/wiki/Account_Family#Root_Key_.28GenerateRootDeterministicKey.29
     """
-    seq = 0
-    while True:
-        private_gen = from_bytes(first_half_of_sha512(
-            b''.join([seed, to_bytes(seq, 4)])))
-        seq += 1
-        if curves.SECP256k1.order >= private_gen:
-            break
-
-    public_gen = curves.SECP256k1.generator * private_gen
-
-    # Now that we have the private and public generators, we apparently
-    # have to calculate a secret from them that can be used as a ECDSA
-    # signing key.
-    secret = i = 0
-    public_gen_compressed = ecc_point_to_bytes_compressed(public_gen)
-    while True:
-        secret = from_bytes(first_half_of_sha512(
-            b"".join([
-                public_gen_compressed, to_bytes(0, 4), to_bytes(i, 4)])))
-        i += 1
-        if curves.SECP256k1.order >= secret:
-            break
-    secret = (secret + private_gen) % curves.SECP256k1.order
-
-    # The ECDSA signing key object will, given this secret, then expose
-    # the actual private and public key we are supposed to work with.
     key = SigningKey.from_secret_exponent(secret, curves.SECP256k1)
-    # Attach the generators as supplemental data
-    key.private_gen = private_gen
-    key.public_gen = public_gen
     return key
 
 
